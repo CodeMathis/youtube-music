@@ -1,8 +1,20 @@
-import { net } from 'electron';
-
 import { createPlugin } from '@/utils';
 import registerCallback from '@/providers/song-info';
 import { t } from '@/i18n';
+
+type SongInfo = {
+  songDuration?: number;
+  elapsedSeconds?: number;
+  url?: string;
+  videoId?: string;
+  playlistId?: string;
+  imageSrc?: string | null;
+  title?: string;
+  artist?: string;
+  isPaused?: boolean;
+  album?: string | null;
+  views?: number;
+};
 
 type LumiaData = {
   origin: string;
@@ -31,70 +43,76 @@ export default createPlugin({
     enabled: false,
   },
   backend({ ipc }) {
-    const secToMilisec = (t?: number) =>
-      t ? Math.round(Number(t) * 1e3) : undefined;
-    const previousStatePaused = null;
+    const port = 39231;
+    const token = 'lsmedia_ytmsI7812';
 
-    const data: LumiaData = {
-      origin: 'youtubemusic',
-      eventType: 'switchSong',
-    };
+    const secToMilisec = (t?: number): number | undefined =>
+      t ? Math.round(t * 1000) : undefined;
 
-    const post = (data: LumiaData) => {
-      const port = 39231;
+    let lastTitle = '';
+
+    const sendToLumia = (eventType: string, songInfo: SongInfo) => {
+      if (!songInfo.title || !songInfo.artist) {
+        // console.error('Données de chanson invalides.');
+        return;
+      }
+
+      const data: LumiaData = {
+        origin: 'youtubemusic',
+        eventType,
+        duration: secToMilisec(songInfo.songDuration),
+        progress: secToMilisec(songInfo.elapsedSeconds),
+        url: songInfo.url,
+        videoId: songInfo.videoId,
+        playlistId: songInfo.playlistId,
+        cover: songInfo.imageSrc || null,
+        cover_url: songInfo.imageSrc || null,
+        album_url: songInfo.imageSrc || null,
+        title: songInfo.title,
+        artists: [songInfo.artist],
+        status: 'playing',
+        isPaused: songInfo.isPaused,
+        album: songInfo.album || null,
+        views: songInfo.views,
+      };
+
       const headers = {
         'Content-Type': 'application/json',
         'Accept': 'application/json',
         'Access-Control-Allow-Headers': '*',
         'Access-Control-Allow-Origin': '*',
       } as const;
+
       const url = `http://127.0.0.1:${port}/api/media`;
 
-      net
-        .fetch(url, {
-          method: 'POST',
-          body: JSON.stringify({ token: 'lsmedia_ytmsI7812', data }),
-          headers,
-        })
-        .catch((error: { code: number; errno: number }) => {
-          console.log(
-            `Error: '${
-              error.code || error.errno
-            }' - when trying to access lumiastream webserver at port ${port}`,
-          );
-        });
+      fetch(url, {
+        method: 'POST',
+        body: JSON.stringify({ token, data }),
+        headers,
+      }).catch((error: { code?: number; errno?: number }) => {
+        console.error(
+          `LumiaStream Error: '${
+            error.code || error.errno || 'unknown'
+          }' - Failed to connect to port ${port}`,
+        );
+      });
     };
 
     ipc.on('ytmd:player-api-loaded', () =>
       ipc.send('ytmd:setup-time-changed-listener'),
     );
 
-    registerCallback((songInfo) => {
-      if (!songInfo.title && !songInfo.artist) {
+    registerCallback((songInfo: SongInfo) => {
+      if (!songInfo.title || !songInfo.artist) {
+        // console.log('Aucune chanson valide detectee. Ignorer...');
         return;
       }
 
-      if (previousStatePaused === null) {
-        data.eventType = 'switchSong';
-      } else if (previousStatePaused !== songInfo.isPaused) {
-        data.eventType = 'playPause';
+      if (songInfo.title !== lastTitle) {
+        // console.log(`Chanson changee: ${songInfo.title}`);
+        sendToLumia('switchSong', songInfo);
+        lastTitle = songInfo.title;
       }
-
-      data.duration = secToMilisec(songInfo.songDuration);
-      data.progress = secToMilisec(songInfo.elapsedSeconds);
-      data.url = songInfo.url;
-      data.videoId = songInfo.videoId;
-      data.playlistId = songInfo.playlistId;
-      data.cover = songInfo.imageSrc;
-      data.cover_url = songInfo.imageSrc;
-      data.album_url = songInfo.imageSrc;
-      data.title = songInfo.title;
-      data.artists = [songInfo.artist];
-      data.status = songInfo.isPaused ? 'stopped' : 'playing';
-      data.isPaused = songInfo.isPaused;
-      data.album = songInfo.album;
-      data.views = songInfo.views;
-      post(data);
     });
   },
 });
