@@ -36,8 +36,12 @@ type LumiaData = {
 };
 
 export default createPlugin({
-  name: () => t('plugins.lumiastream.name'),
-  description: () => t('plugins.lumiastream.description'),
+  name: () => t('Lumia Stream'),
+  description: () =>
+    t(
+      'Adds Lumia Stream support. WARNING, on Lumi go to connections and add a new connection to YT Music.\n' +
+        'Set "TH-CH Youtube Music" as the name, "http://127.0.0.1:39231/api/media" as the IP and "39231" as the port.',
+    ),
   restartNeeded: true,
   config: {
     enabled: false,
